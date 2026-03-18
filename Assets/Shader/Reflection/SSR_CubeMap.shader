@@ -270,6 +270,7 @@ Shader "Custom/SSR_CubeMap"
                 } else {
                     // color = SAMPLE_TEXTURE2D_X_LOD(_CubeMapTexture, sampler_LinearClamp, IN.texcoord, 0); UnityのReflection Probeのオートモードが解除できず断念...
                 }
+
                 return color * mask * distanceFade * edge * _SSRFade;
             }
             ENDHLSL
@@ -287,6 +288,14 @@ Shader "Custom/SSR_CubeMap"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
             #include "Packages/com.unity.render-pipelines.core/Runtime/Utilities/Blit.hlsl"
             #include "Packages/com.unity.render-pipelines.core/ShaderLibrary/Color.hlsl"
+            #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/UnityGBuffer.deprecated.hlsl" // Gbufferのコンポーネント一覧
+
+            #define GBUFFER0 0 // albedo(rgb)/materialFlags
+            #define GBUFFER1 1 // specular(rgb)/occlusion
+            #define GBUFFER2 2 // normal(rgb)/smootheness
+            FRAMEBUFFER_INPUT_X_HALF(GBUFFER0);
+            FRAMEBUFFER_INPUT_X_HALF(GBUFFER1);
+            FRAMEBUFFER_INPUT_X_HALF(GBUFFER2);
 
             TEXTURE2D_X(_GaussTexture);
             TEXTURE2D_X(_SSRTexture);
@@ -296,7 +305,31 @@ Shader "Custom/SSR_CubeMap"
                 float4 gauss = SAMPLE_TEXTURE2D(_GaussTexture, sampler_LinearClamp, IN.texcoord);
                 float4 ssr = SAMPLE_TEXTURE2D(_SSRTexture, sampler_LinearClamp, IN.texcoord);
 
-                half4 color = FragNearest(IN) + gauss;
+                float4 gbuffer0 = LOAD_FRAMEBUFFER_X_INPUT(GBUFFER0, IN.positionCS.xy);
+                float4 gbuffer1 = LOAD_FRAMEBUFFER_X_INPUT(GBUFFER1, IN.positionCS.xy);
+                float4 gbuffer2 = LOAD_FRAMEBUFFER_X_INPUT(GBUFFER2, IN.positionCS.xy); // GBuffer Normal[-1~1]/Smoothness
+
+                uint materialFlags = UnpackGBufferMaterialFlags(gbuffer0.a);
+                bool isSpecularWorkflow = (materialFlags & kMaterialFlagSpecularSetup) != 0;
+
+                half3 specular;
+                if (isSpecularWorkflow)
+                {
+                    // specular workflow specular項を使う
+                    specular = gbuffer1.rgb;
+                }
+                else
+                {
+                    // metallic workflow
+                    half3 albedo = gbuffer0.rgb;
+                    half3 metallic = gbuffer1.r;
+                    specular = lerp(kDielectricSpec.rgb, albedo, metallic);
+                }
+
+                half3 reflection = gauss * specular; // RGBの反映率を求める
+                half roughness = 1 - gbuffer2.a; // Smoothness -> Roughness (反射率)
+
+                half4 color = FragNearest(IN) + half4(reflection, roughness);
                 return color;
             }
             ENDHLSL
