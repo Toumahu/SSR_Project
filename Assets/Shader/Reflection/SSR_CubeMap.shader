@@ -298,13 +298,9 @@ Shader "Custom/SSR_CubeMap"
             FRAMEBUFFER_INPUT_X_HALF(GBUFFER2);
 
             TEXTURE2D_X(_GaussTexture);
-            TEXTURE2D_X(_SSRTexture);
 
             half4 frag(Varyings IN) : SV_Target
             {
-                float4 gauss = SAMPLE_TEXTURE2D(_GaussTexture, sampler_LinearClamp, IN.texcoord);
-                float4 ssr = SAMPLE_TEXTURE2D(_SSRTexture, sampler_LinearClamp, IN.texcoord);
-
                 float4 gbuffer0 = LOAD_FRAMEBUFFER_X_INPUT(GBUFFER0, IN.positionCS.xy);
                 float4 gbuffer1 = LOAD_FRAMEBUFFER_X_INPUT(GBUFFER1, IN.positionCS.xy);
                 float4 gbuffer2 = LOAD_FRAMEBUFFER_X_INPUT(GBUFFER2, IN.positionCS.xy); // GBuffer Normal[-1~1]/Smoothness
@@ -326,6 +322,7 @@ Shader "Custom/SSR_CubeMap"
                     specular = lerp(kDielectricSpec.rgb, albedo, metallic);
                 }
 
+                float4 gauss = SAMPLE_TEXTURE2D(_GaussTexture, sampler_LinearClamp, IN.texcoord);
                 half3 reflection = gauss * specular; // RGBの反映率を求める
                 half roughness = 1 - gbuffer2.a; // Smoothness -> Roughness (反射率)
 
